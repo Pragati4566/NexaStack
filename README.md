@@ -1,146 +1,221 @@
-# CS144 — A TCP/IP Stack in Modern C++ (minnow)
+# NexaStack — TCP/IP Stack in Modern C++
 
-> A working TCP/IP protocol stack built from the ground up — reliable byte stream,
-> stream reassembler, standards-compliant TCP receiver and sender, an IP-over-Ethernet
-> network interface with ARP, and a longest-prefix-match IP router — an independent,
-> from-skeleton implementation of **Stanford CS144 — Introduction to Computer Networking**,
-> part of a [csdiy.wiki](https://csdiy.wiki/) full-catalog build.
+A TCP/IP networking stack implemented in modern C++ as an educational project based on the concepts and assignments covered in Stanford's CS144: Introduction to Computer Networking.
 
-![status](https://img.shields.io/badge/status-complete-brightgreen)
-![language](https://img.shields.io/badge/C%2B%2B20-informational)
-![license](https://img.shields.io/badge/license-MIT-blue)
+The project explores how reliable data transfer and network communication work internally, from managing byte streams and TCP sequence numbers to resolving hardware addresses and forwarding IP datagrams.
+
+**Repository:** [Pragati4566/NexaStack](https://github.com/Pragati4566/NexaStack)
 
 ## Overview
 
-Stanford CS144 has students build a real TCP/IP stack in modern C++ (the 2023+
-"minnow" codebase), one layer at a time, and verifies each layer against the same
-test suite the course staff use. This repository implements every checkpoint from
-the empty skeleton: an in-memory reliable byte stream, a reassembler that stitches
-out-of-order/overlapping substrings back into order, a TCP receiver and sender that
-interoperate with real TCP implementations, a network interface that carries IP over
-Ethernet using ARP, and an IP router that forwards datagrams by longest-prefix match.
+NexaStack focuses on implementing the fundamental components of a TCP/IP stack from the ground up. Instead of relying entirely on existing networking abstractions, the project works through the core mechanisms that make reliable communication possible.
 
-The result is standards-compliant: the sender/receiver pair correctly handle SYN/FIN,
-sequence-number wrapping, flow-control windows, zero-window probing, and retransmission
-with exponential backoff.
+The implementation is organized into incremental checkpoints, with each component building on the functionality developed in the previous stages.
 
-## Results (measured on WSL2 Ubuntu 24.04, gcc 13.3.0, x86-64)
+The main components include:
 
-Each test is run **twice** by the course's own harness — once compiled with
-Address/UB sanitizers, once optimized — plus speed benchmarks.
+- **Reliable Byte Stream:** A capacity-bounded in-memory byte stream with separate reading and writing interfaces.
+- **Stream Reassembler:** Reconstructs an ordered byte stream from incoming substrings that may arrive out of order or overlap.
+- **TCP Receiver:** Processes incoming TCP segments and manages acknowledgments, sequence numbers, and advertised receive windows.
+- **TCP Sender:** Handles transmission, outstanding segments, retransmission timers, and flow-control behavior.
+- **Network Interface:** Encapsulates IP datagrams into Ethernet frames and resolves IP-to-MAC address mappings using ARP.
+- **IP Router:** Forwards IP datagrams between network interfaces using longest-prefix-match routing.
 
+Together, these components demonstrate how networking protocols coordinate to provide reliable communication across networked systems.
+
+## Features
+
+### 1. Reliable Byte Stream
+
+Implements an in-memory byte stream with a configurable capacity.
+
+Key concepts include:
+- Separate `Writer` and `Reader` interfaces.
+- Buffer capacity management.
+- Tracking bytes written and read.
+- Handling end-of-stream and input errors.
+- Preventing writes from exceeding available capacity.
+
+### 2. Stream Reassembly
+
+Combines incoming data fragments into a continuous byte stream in the correct order.
+
+Key concepts include:
+- Out-of-order data handling.
+- Overlapping substring management.
+- Reassembly of contiguous bytes.
+- Capacity-aware buffering.
+- Tracking the next expected stream index.
+
+### 3. TCP Receiver
+
+Processes incoming TCP segments and translates wrapped TCP sequence numbers into absolute stream positions.
+
+Key concepts include:
+- 32-bit TCP sequence numbers.
+- Sequence-number unwrapping.
+- SYN and FIN handling.
+- Acknowledgment number generation.
+- Receive-window management.
+- Integration with the stream reassembler.
+
+### 4. TCP Sender
+
+Manages outgoing TCP segments while respecting the receiver's advertised window and the protocol's reliability requirements.
+
+Key concepts include:
+- Window-based transmission.
+- Outstanding segment tracking.
+- Retransmission timers.
+- Exponential retransmission backoff.
+- SYN and FIN sequence-space handling.
+- Zero-window probing and flow control.
+
+### 5. Network Interface and ARP
+
+Implements the network-interface functionality needed to transmit and receive IP datagrams over Ethernet.
+
+Key concepts include:
+- IP datagram encapsulation into Ethernet frames.
+- Ethernet frame processing.
+- ARP requests and replies.
+- IP-to-MAC address resolution.
+- Address mapping caches.
+- Managing datagrams while address resolution is pending.
+
+### 6. IP Router
+
+Forwards IP datagrams between multiple network interfaces according to routing-table entries.
+
+Key concepts include:
+- Routing-table lookup.
+- Longest-prefix matching.
+- Next-hop selection.
+- Time-to-Live (TTL) handling.
+- IPv4 header checksum updates where required.
+
+## Architecture
+
+The implementation follows a layered design in which each component has a clearly defined responsibility.
+
+| Component | Responsibility |
+|---|---|
+| Byte Stream | Stores and exposes a reliable sequence of bytes |
+| Stream Reassembler | Restores the original order of received data |
+| TCP Receiver | Processes incoming segments and generates acknowledgments |
+| TCP Sender | Transmits segments and handles retransmission |
+| Network Interface | Connects IP-layer communication with Ethernet |
+| IP Router | Routes datagrams between network interfaces |
+
+This separation makes the individual components easier to reason about, implement, and test.
+
+## Repository Structure
+
+```text
+NexaStack/
+├── src/
+│   ├── byte_stream.hh
+│   ├── byte_stream.cc
+│   ├── reassembler.hh
+│   ├── reassembler.cc
+│   ├── wrapping_integers.hh
+│   ├── wrapping_integers.cc
+│   ├── tcp_receiver.hh
+│   ├── tcp_receiver.cc
+│   ├── tcp_sender.hh
+│   ├── tcp_sender.cc
+│   ├── network_interface.hh
+│   ├── network_interface.cc
+│   ├── router.hh
+│   └── router.cc
+├── apps/
+│   └── webget.cc
+├── tests/
+├── util/
+├── CMakeLists.txt
+└── README.md
 ```
-ctest --test-dir build -E 't_webget'
-=> 100% tests passed, 0 tests failed out of 38
-```
 
-| Checkpoint | What it does | Result (measured, ctest) |
-|---|---|---|
-| 0 — Byte stream + webget | In-memory reliable byte stream; HTTP GET over TCP | byte_stream **9/9**; webget verified vs. example.com |
-| 1 — Reassembler | Reorder/coalesce overlapping substrings into the stream | **17/17** |
-| 2 — TCP receiver | Wrap32 seqno conversion + receiver (ackno, window) | **29/29** |
-| 3 — TCP sender | Windowed sending, retransmission, backoff, SYN/FIN | **36/36** (full TCP stack) |
-| 4 — Network interface | IP-over-Ethernet with ARP resolution + caching | net_interface **pass** |
-| 5 — IP router | Longest-prefix-match forwarding, TTL decrement | net_interface + router **3/3** |
+*The tree above shows the expected layout of the implementation files. Exact filenames and directories may differ depending on the current repository structure.*
 
-**Speed benchmarks** (optimized build): ByteStream **2.33 Gbit/s**, Reassembler **7.13 Gbit/s** — both well above the course thresholds.
+## Technology Stack
 
-The single test not counted above is `t_webget`, which fetches
-`http://cs144.keithw.org/nph-hasher/xyzzy` over the public Internet. That host is
-unreachable from this build machine (a plain `curl` to it also times out, while
-`curl example.com` returns HTTP 200 in <1s), so the failure is a network-reachability
-limitation, not a code defect. The `webget` program itself is verified correct against
-`http://example.com/` — see [`results/check0_webget.txt`](results/check0_webget.txt).
+- **Language:** C++20
+- **Build System:** CMake
+- **Testing:** CTest
+- **Debugging and Runtime Checks:** AddressSanitizer and UndefinedBehaviorSanitizer, where configured
+- **Supporting Components:** C++ standard library and course-provided networking utilities
 
-## Implemented assignments
+## Build and Run
 
-- [x] **Checkpoint 0** — Reliable byte stream (`Writer`/`Reader` over a capacity-bounded buffer) + `webget` HTTP client
-- [x] **Checkpoint 1** — Stream reassembler (out-of-order, overlapping, capacity-limited)
-- [x] **Checkpoint 2** — `Wrap32` sequence-number wrapping/unwrapping + TCP receiver
-- [x] **Checkpoint 3** — TCP sender (window filling, retransmission timer, exponential backoff, zero-window probing)
-- [x] **Checkpoint 4** — Network interface: IP datagrams over Ethernet frames with ARP
-- [x] **Checkpoint 5** — IP router: longest-prefix-match forwarding between interfaces
+### Prerequisites
 
-## Project structure
+A Linux development environment with the following tools is recommended:
 
-```
-cs144-tcp/
-├── src/                 # the implementations (this is the work)
-│   ├── byte_stream.{hh,cc}          # check0
-│   ├── reassembler.{hh,cc}          # check1
-│   ├── wrapping_integers.{hh,cc}    # check2
-│   ├── tcp_receiver.{hh,cc}         # check2
-│   ├── tcp_sender.{hh,cc}           # check3
-│   ├── network_interface.{hh,cc}    # check4
-│   └── router.{hh,cc}               # check5
-├── apps/webget.cc       # check0 HTTP client
-├── tests/               # the course's own test suite (ctest)
-├── util/                # provided helpers (sockets, parsers, headers)
-├── results/             # captured ctest output + measured numbers
-└── CMakeLists.txt
-```
+- A C++ compiler supporting C++20.
+- CMake 3.24 or later.
+- Make or another supported build tool.
+- The dependencies required by the repository's CMake configuration.
 
-## How to run
-
-Requires a Linux toolchain: g++ (C++20), cmake ≥ 3.24. On this machine it was built
-in WSL2 Ubuntu 24.04.
+### 1. Clone the Repository
 
 ```bash
-# configure and build
-cmake -S . -B build
-cmake --build build -j
-
-# run the full test suite (each test runs sanitized + optimized)
-cmake --build build --target test          # or: ctest --test-dir build
-
-# run a single checkpoint's tests
-cmake --build build --target check0        # byte stream + webget
-cmake --build build --target check1        # + reassembler
-cmake --build build --target check2        # + receiver
-cmake --build build --target check3        # + sender  (full TCP)
-cmake --build build --target check4        # network interface
-cmake --build build --target check5        # + router
-
-# speed benchmarks
-cmake --build build --target speed
+git clone https://github.com/Pragati4566/NexaStack.git
+cd NexaStack
 ```
 
-> Note on the environment: `/mnt/<drive>` (9p) is very slow for CMake; this repo was
-> built on a native ext4 path and the git tree kept on the mounted drive.
+### 2. Configure the Project
 
-## Verification
+```bash
+cmake -S . -B build
+```
 
-All verification uses the course's shipped `ctest` suite. Captured output lives in
-[`results/`](results/):
+### 3. Build the Code
 
-- [`results/full_suite.txt`](results/full_suite.txt) — 38/38 pass + per-checkpoint breakdown + throughput
-- `results/check0_byte_stream.txt` … `results/check5_router.txt` — per-checkpoint runs
-- [`results/check0_webget.txt`](results/check0_webget.txt) — webget correctness proof + the GFW note
+```bash
+cmake --build build -j
+```
 
-## Tech stack
+### 4. Run the Tests
 
-C++20, CMake, CTest, AddressSanitizer/UBSan. No third-party libraries — only the C++
-standard library and the course-provided socket/parser utilities.
+```bash
+ctest --test-dir build --output-on-failure
+```
 
-## Key ideas / what I learned
+To run the tests associated with an individual checkpoint, use the corresponding targets if they are available in the current build configuration:
 
-- **Layering**: each layer exposes a narrow interface (byte stream → reassembler →
-  receiver/sender → network interface → router) and is testable in isolation.
-- **Sequence numbers**: reconciling 32-bit wrapping seqnos with 64-bit absolute
-  stream indices, choosing the unwrap nearest a checkpoint.
-- **Reliability**: a single retransmission timer with exponential backoff, and the
-  subtlety of *not* backing off during zero-window probes.
-- **Flow control**: filling exactly the advertised window, and probing a zero window
-  with one byte to avoid deadlock.
-- **ARP**: on-demand address resolution with a request throttle and mapping expiry.
-- **Routing**: longest-prefix match, TTL handling, and checksum recomputation.
+```bash
+cmake --build build --target check0
+cmake --build build --target check1
+cmake --build build --target check2
+cmake --build build --target check3
+cmake --build build --target check4
+cmake --build build --target check5
+```
 
-## Credits & license
+Refer to the project's CMake configuration for the targets supported by the current version.
 
-Based on the assignments of **Stanford CS144 (Introduction to Computer Networking)**
-by Keith Winstein and the CS144 course staff — the `minnow` framework and its test
-suite are theirs (<https://cs144.github.io>). This repository is an independent
-educational reimplementation of the student portions; all course materials,
-frameworks, and specifications belong to their original authors. My own
-implementation code (the bodies I wrote under `src/` and `apps/webget.cc`) is
-released under the [MIT License](LICENSE).
+## What This Project Demonstrates
+
+Working on NexaStack provides practical exposure to several important computer networking concepts:
+
+- **Protocol layering:** How individual networking components interact through defined interfaces.
+- **Reliable data transfer:** How TCP uses sequence numbers, acknowledgments, and retransmissions to manage delivery.
+- **Sequence-number arithmetic:** How wrapped 32-bit sequence numbers relate to absolute stream positions.
+- **Flow control:** How advertised receive windows regulate the amount of data sent.
+- **Out-of-order delivery:** How received fragments can be reconstructed into the correct byte sequence.
+- **Address resolution:** How ARP maps network-layer IP addresses to link-layer MAC addresses.
+- **Packet forwarding:** How routers choose the appropriate route using longest-prefix matching.
+- **Testing and debugging:** How modular tests and runtime checks help identify implementation errors.
+
+## Learning Outcomes
+
+This project brings together concepts from the transport, network, and link layers in a practical C++ implementation.
+
+It provides an opportunity to understand the mechanisms behind TCP reliability, buffering, retransmission, flow control, address resolution, and IP routing rather than treating networking as a black box.
+
+## Acknowledgment
+
+This educational project is based on concepts and assignment specifications from **[Stanford CS144 — Introduction to Computer Networking](https://cs144.github.io/)**.
+
+The course provides the learning framework and networking specifications used as a reference for implementing the stack's core components.
